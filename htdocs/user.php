@@ -1,31 +1,45 @@
 <?php
-// 溯日社区 - 个人中心
+// 溯日社区 - 用户资料页
 require_once 'includes/config.php';
 require_once 'includes/database.php';
 
 session_start();
 
-// 检查用户是否登录
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
-
 $db = new Database();
 $currentUser = getCurrentUser();
 
+// 获取用户ID
+$userId = (int)($_GET['id'] ?? 0);
+if ($userId <= 0) {
+    header('Location: index.php');
+    exit;
+}
+
+// 获取用户信息
+$user = $db->getUserById($userId);
+if (!$user) {
+    header('Location: index.php');
+    exit;
+}
+
 // 获取用户发布的帖子
-$userPosts = $db->getPosts(null, 10, 0); // 这里需要修改为获取特定用户的帖子
-$stmt = getDB()->prepare("SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC LIMIT 10");
-$stmt->execute([$_SESSION['user_id']]);
+$stmt = getDB()->prepare("SELECT p.*, c.name as category_name FROM posts p LEFT JOIN categories c ON p.category_id = c.id WHERE p.user_id = ? AND p.status = 'published' ORDER BY p.created_at DESC LIMIT 10");
+$stmt->execute([$userId]);
 $userPosts = $stmt->fetchAll();
+
+$isFollowing = false;
+if ($currentUser) {
+    $followStmt = getDB()->prepare("SELECT id FROM follows WHERE follower_id = ? AND followed_id = ?");
+    $followStmt->execute([$currentUser['id'], $userId]);
+    $isFollowing = $followStmt->fetch() !== false;
+}
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>个人中心 - 溯日社区</title>
+    <title><?= escape($user['username']) ?>的个人资料 - 溯日社区</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -37,12 +51,20 @@ $userPosts = $stmt->fetchAll();
                     <li class="nav-item"><a href="index.php" class="nav-link">首页</a></li>
                     <li class="nav-item"><a href="categories.php" class="nav-link">板块</a></li>
                     <li class="nav-item"><a href="posts.php" class="nav-link">帖子</a></li>
-                    <li class="nav-item"><a href="post_create.php" class="nav-link">发布</a></li>
+                    <?php if ($currentUser): ?>
+                        <li class="nav-item"><a href="post_create.php" class="nav-link">发布</a></li>
+                        <li class="nav-item"><a href="profile.php" class="nav-link">个人中心</a></li>
+                    <?php endif; ?>
                 </ul>
                 <div class="user-menu">
-                    <span>欢迎, <?= escape($currentUser['username']) ?></span>
-                    <a href="profile.php" class="btn btn-outline">个人中心</a>
-                    <button class="btn btn-outline" onclick="logout()">退出</button>
+                    <?php if ($currentUser): ?>
+                        <span>欢迎, <?= escape($currentUser['username']) ?></span>
+                        <a href="profile.php" class="btn btn-outline">个人中心</a>
+                        <button class="btn btn-outline" onclick="logout()">退出</button>
+                    <?php else: ?>
+                        <a href="login.php" class="btn btn-outline">登录</a>
+                        <a href="register.php" class="btn btn-primary">注册</a>
+                    <?php endif; ?>
                 </div>
             </nav>
         </div>
@@ -51,37 +73,40 @@ $userPosts = $stmt->fetchAll();
     <main class="main-content">
         <div class="container">
             <div class="user-card">
-                <h2 class="card-title">个人中心</h2>
+                <h2 class="card-title"><?= escape($user['username']) ?>的个人资料</h2>
                 <div style="display: flex; align-items: center; margin-bottom: 1.5rem;">
-                    <img src="images/default_avatar.png" alt="头像" class="user-avatar" id="userAvatar">
+                    <img src="images/default_avatar.png" alt="头像" class="user-avatar">
                     <div>
-                        <h3 class="user-name"><?= escape($currentUser['username']) ?></h3>
-                        <p class="user-info">注册时间: <?= date('Y-m-d', strtotime($currentUser['created_at'])) ?></p>
-                        <p class="user-info">角色: <?= $currentUser['role'] === 'admin' ? '管理员' : '普通用户' ?></p>
-                        <p class="user-info">积分: <?= $currentUser['points'] ?? 0 ?></p>
+                        <h3 class="user-name"><?= escape($user['username']) ?></h3>
+                        <p class="user-info">注册时间: <?= date('Y-m-d', strtotime($user['created_at'])) ?></p>
+                        <p class="user-info">角色: <?= $user['role'] === 'admin' ? '管理员' : '普通用户' ?></p>
+                        <p class="user-info">积分: <?= $user['points'] ?></p>
                     </div>
                 </div>
                 
                 <div class="form-group">
                     <label class="form-label">个人简介</label>
-                    <textarea class="form-input" rows="3" placeholder="编辑个人简介..." id="bio"><?= escape($currentUser['bio'] ?? '') ?></textarea>
-                    <button class="btn btn-primary" style="margin-top: 0.5rem;" onclick="updateBio()">更新简介</button>
+                    <p><?= escape($user['bio'] ?? '暂无简介') ?></p>
                 </div>
                 
                 <!-- 关注功能 -->
                 <div class="form-group">
-                    <h3>关注信息</h3>
+                    <?php if ($currentUser && $currentUser['id'] != $user['id']): ?>
+                        <button class="btn <?= $isFollowing ? 'btn-danger' : 'btn-primary' ?>" onclick="toggleFollow(<?= $user['id'] ?>)">
+                            <?= $isFollowing ? '取消关注' : '关注' ?>
+                        </button>
+                    <?php endif; ?>
                     <p>关注数: 
                         <?php
                         $followCountStmt = getDB()->prepare("SELECT COUNT(*) FROM follows WHERE follower_id = ?");
-                        $followCountStmt->execute([$currentUser['id']]);
+                        $followCountStmt->execute([$user['id']]);
                         echo $followCountStmt->fetchColumn();
                         ?>
                     </p>
                     <p>粉丝数: 
                         <?php
                         $followerCountStmt = getDB()->prepare("SELECT COUNT(*) FROM follows WHERE followed_id = ?");
-                        $followerCountStmt->execute([$currentUser['id']]);
+                        $followerCountStmt->execute([$user['id']]);
                         echo $followerCountStmt->fetchColumn();
                         ?>
                     </p>
@@ -89,7 +114,7 @@ $userPosts = $stmt->fetchAll();
             </div>
             
             <div class="card">
-                <h3 class="card-title">我的帖子</h3>
+                <h3 class="card-title"><?= escape($user['username']) ?>发布的帖子</h3>
                 <?php if ($userPosts): ?>
                     <div class="category-posts">
                         <?php foreach ($userPosts as $post): ?>
@@ -110,7 +135,7 @@ $userPosts = $stmt->fetchAll();
                         <?php endforeach; ?>
                     </div>
                 <?php else: ?>
-                    <p>您还没有发布任何帖子</p>
+                    <p><?= escape($user['username']) ?>还没有发布任何帖子</p>
                 <?php endif; ?>
             </div>
         </div>
@@ -145,26 +170,30 @@ $userPosts = $stmt->fetchAll();
             }
         }
         
-        // 更新个人简介
-        async function updateBio() {
-            const bio = document.getElementById('bio').value;
+        // 关注/取消关注功能
+        async function toggleFollow(userId) {
+            if (!currentUser) {
+                alert('请先登录');
+                return;
+            }
             
             try {
-                const response = await fetch('api/profile.php', {
-                    method: 'POST',
+                const isFollowing = document.querySelector('.btn').textContent.includes('取消关注');
+                const response = await fetch('api/follow.php', {
+                    method: isFollowing ? 'DELETE' : 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        action: 'update_bio',
-                        bio: bio
+                        user_id: userId
                     })
                 });
                 
                 const result = await response.json();
                 
                 if (result.success) {
-                    alert('简介更新成功');
+                    // 刷新页面以更新关注状态
+                    location.reload();
                 } else {
                     alert(result.message);
                 }

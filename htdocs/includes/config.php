@@ -24,6 +24,12 @@ define('COMMENTS_PER_PAGE', 20);
 // 安全配置
 define('HASH_COST', 10);
 
+// 积分配置
+define('POINTS_REGISTER', 10);      // 注册获得积分
+define('POINTS_POST', 5);           // 发帖获得积分
+define('POINTS_COMMENT', 2);        // 评论获得积分
+define('POINTS_LIKE_RECEIVED', 1);  // 被点赞获得积分
+
 // 创建数据库连接
 function getDB() {
     try {

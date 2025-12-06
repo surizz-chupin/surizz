@@ -43,6 +43,9 @@ try {
                 $stmt = getDB()->prepare("UPDATE posts SET comment_count = comment_count + 1 WHERE id = ?");
                 $stmt->execute([$postId]);
                 
+                // 评论成功后添加积分
+                $db->addPoints($_SESSION['user_id'], POINTS_COMMENT, '发表评论');
+                
                 $response = [
                     'success' => true,
                     'message' => '评论发布成功'

@@ -76,6 +76,15 @@ try {
                 }
                 
                 if ($db->registerUser($username, $email, $password)) {
+                    // 注册成功后添加积分
+                    $userIdStmt = getDB()->prepare("SELECT id FROM users WHERE username = ? AND email = ?");
+                    $userIdStmt->execute([$username, $email]);
+                    $user = $userIdStmt->fetch();
+                    
+                    if ($user) {
+                        $db->addPoints($user['id'], POINTS_REGISTER, '注册奖励');
+                    }
+                    
                     $response = [
                         'success' => true,
                         'message' => '注册成功'

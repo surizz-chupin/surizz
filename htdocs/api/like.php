@@ -33,7 +33,33 @@ try {
                 throw new Exception('参数错误');
             }
             
+            // 获取目标内容的作者ID
+            if ($targetType === 'post') {
+                $stmt = getDB()->prepare("SELECT user_id FROM posts WHERE id = ?");
+                $stmt->execute([$targetId]);
+                $target = $stmt->fetch();
+            } else {
+                $stmt = getDB()->prepare("SELECT user_id FROM comments WHERE id = ?");
+                $stmt->execute([$targetId]);
+                $target = $stmt->fetch();
+            }
+            
+            if (!$target) {
+                throw new Exception('目标内容不存在');
+            }
+            
+            $targetUserId = $target['user_id'];
+            $wasLiked = $db->isLiked($_SESSION['user_id'], $targetType, $targetId);
             $result = $db->toggleLike($_SESSION['user_id'], $targetType, $targetId);
+            
+            // 如果是点赞操作，给被点赞用户添加积分；如果是取消点赞，扣除积分
+            if ($result && !$wasLiked) {
+                // 添加点赞
+                $db->addPoints($targetUserId, POINTS_LIKE_RECEIVED, '内容被点赞');
+            } elseif (!$result && $wasLiked) {
+                // 取消点赞
+                $db->addPoints($targetUserId, -POINTS_LIKE_RECEIVED, '内容被取消点赞');
+            }
             
             if ($result !== false) {
                 // 获取更新后的点赞数

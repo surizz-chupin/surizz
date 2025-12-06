@@ -56,6 +56,9 @@ try {
             }
             
             if ($db->createPost($title, $content, $_SESSION['user_id'], $categoryId)) {
+                // 发帖成功后添加积分
+                $db->addPoints($_SESSION['user_id'], POINTS_POST, '发布帖子');
+                
                 $response = [
                     'success' => true,
                     'message' => '帖子发布成功'

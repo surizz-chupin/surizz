@@ -196,4 +196,150 @@ class Database {
         $stmt->execute([$limit]);
         return $stmt->fetchAll();
     }
+    
+    // 管理员功能：获取统计数据
+    public function getTotalUsers() {
+        $stmt = $this->pdo->query("SELECT COUNT(*) FROM users");
+        return $stmt->fetchColumn();
+    }
+    
+    public function getTotalPosts() {
+        $stmt = $this->pdo->query("SELECT COUNT(*) FROM posts WHERE status = 'published'");
+        return $stmt->fetchColumn();
+    }
+    
+    public function getTotalComments() {
+        $stmt = $this->pdo->query("SELECT COUNT(*) FROM comments WHERE status = 'published'");
+        return $stmt->fetchColumn();
+    }
+    
+    public function getRecentUsers($limit = 10) {
+        $sql = "SELECT id, username, email, status, created_at FROM users ORDER BY created_at DESC LIMIT ?";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([$limit]);
+        return $stmt->fetchAll();
+    }
+    
+    public function getRecentPosts($limit = 10) {
+        $sql = "SELECT p.*, u.username, c.name as category_name 
+                FROM posts p 
+                JOIN users u ON p.user_id = u.id 
+                JOIN categories c ON p.category_id = c.id 
+                ORDER BY p.created_at DESC 
+                LIMIT ?";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([$limit]);
+        return $stmt->fetchAll();
+    }
+    
+    // 管理员功能：管理用户
+    public function banUser($userId) {
+        $stmt = $this->pdo->prepare("UPDATE users SET status = ? WHERE id = ?");
+        return $stmt->execute(['banned', $userId]);
+    }
+    
+    public function unbanUser($userId) {
+        $stmt = $this->pdo->prepare("UPDATE users SET status = ? WHERE id = ?");
+        return $stmt->execute(['active', $userId]);
+    }
+    
+    // 管理员功能：管理帖子
+    public function pinPost($postId) {
+        $stmt = $this->pdo->prepare("UPDATE posts SET is_pinned = 1 WHERE id = ?");
+        return $stmt->execute([$postId]);
+    }
+    
+    public function unpinPost($postId) {
+        $stmt = $this->pdo->prepare("UPDATE posts SET is_pinned = 0 WHERE id = ?");
+        return $stmt->execute([$postId]);
+    }
+    
+    public function essencePost($postId) {
+        $stmt = $this->pdo->prepare("UPDATE posts SET is_essence = 1 WHERE id = ?");
+        return $stmt->execute([$postId]);
+    }
+    
+    public function unessencePost($postId) {
+        $stmt = $this->pdo->prepare("UPDATE posts SET is_essence = 0 WHERE id = ?");
+        return $stmt->execute([$postId]);
+    }
+    
+    // 积分系统
+    public function getUserPoints($userId) {
+        $stmt = $this->pdo->prepare("SELECT points FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $result = $stmt->fetch();
+        return $result ? $result['points'] : 0;
+    }
+    
+    public function addPoints($userId, $points, $reason = '') {
+        $stmt = $this->pdo->prepare("UPDATE users SET points = points + ? WHERE id = ?");
+        $success = $stmt->execute([$points, $userId]);
+        
+        if ($success && $reason) {
+            // 记录积分变动日志（如果需要的话，可以创建积分日志表）
+            $logStmt = $this->pdo->prepare("INSERT INTO points_log (user_id, points, reason, created_at) VALUES (?, ?, ?, NOW())");
+            $logStmt->execute([$userId, $points, $reason]);
+        }
+        
+        return $success;
+    }
+    
+    // 举报功能
+    public function reportContent($userId, $targetType, $targetId, $reason) {
+        $stmt = $this->pdo->prepare("INSERT INTO reports (user_id, target_type, target_id, reason, status) VALUES (?, ?, ?, ?, 'pending')");
+        return $stmt->execute([$userId, $targetType, $targetId, $reason]);
+    }
+    
+    public function getReports($status = null, $limit = 20, $offset = 0) {
+        $sql = "SELECT r.*, u.username as reporter_name, 
+                       CASE 
+                         WHEN r.target_type = 'post' THEN (SELECT title FROM posts WHERE id = r.target_id)
+                         WHEN r.target_type = 'comment' THEN (SELECT content FROM comments WHERE id = r.target_id)
+                         WHEN r.target_type = 'user' THEN (SELECT username FROM users WHERE id = r.target_id)
+                       END as target_content
+                FROM reports r
+                JOIN users u ON r.user_id = u.id";
+        
+        $params = [];
+        if ($status) {
+            $sql .= " WHERE r.status = ?";
+            $params[] = $status;
+        }
+        
+        $sql .= " ORDER BY r.created_at DESC LIMIT ? OFFSET ?";
+        $params[] = $limit;
+        $params[] = $offset;
+        
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+    
+    public function updateReportStatus($reportId, $status) {
+        $stmt = $this->pdo->prepare("UPDATE reports SET status = ? WHERE id = ?");
+        return $stmt->execute([$status, $reportId]);
+    }
+    
+    // 检查是否已点赞
+    public function isLiked($userId, $targetType, $targetId) {
+        $stmt = $this->pdo->prepare("SELECT id FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?");
+        $stmt->execute([$userId, $targetType, $targetId]);
+        return $stmt->fetch() !== false;
+    }
+    
+    // 获取点赞数
+    public function getLikeCount($targetType, $targetId) {
+        if ($targetType === 'post') {
+            $stmt = $this->pdo->prepare("SELECT like_count FROM posts WHERE id = ?");
+            $stmt->execute([$targetId]);
+            $result = $stmt->fetch();
+            return $result ? $result['like_count'] : 0;
+        } else {
+            $stmt = $this->pdo->prepare("SELECT like_count FROM comments WHERE id = ?");
+            $stmt->execute([$targetId]);
+            $result = $stmt->fetch();
+            return $result ? $result['like_count'] : 0;
+        }
+    }
 }

@@ -1,13 +1,10 @@
-```
+```gitignore
 # Compiled and build artifacts
 *.pyc
 __pycache__/
-*.o
-*.obj
 
 # Dependencies
 vendor/
-node_modules/
 
 # Logs and temp files
 *.log
@@ -17,12 +14,13 @@ node_modules/
 # Environment
 .env
 .env.local
-.env.*
-
-# Database
-*.sql
+*.env.*
 
 # Editors
 .vscode/
 .idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```
